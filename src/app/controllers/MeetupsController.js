@@ -1,8 +1,34 @@
 import * as Yup from 'yup';
-import { isBefore } from 'date-fns';
+import { Op } from 'sequelize';
+import { isBefore, startOfDay, endOfDay } from 'date-fns';
 import Meetup from '../models/Meetup';
+import User from '../models/User';
 
 class MeetupsController {
+  async index(req, res) {
+    const { page = 1, date } = req.query;
+
+    const searchDate = date;
+
+    const meetups = await Meetup.findAll({
+      where: {
+        date: {
+          [Op.between]: [startOfDay(searchDate), endOfDay(searchDate)],
+        },
+      },
+      include: [
+        {
+          model: User,
+          attributes: ['name', 'email'],
+        },
+      ],
+      limit: 10,
+      offset: 10 * page - 10,
+    });
+
+    return res.json(meetups);
+  }
+
   async store(req, res) {
     const schema = Yup.object().shape({
       file_id: Yup.number().required(),
@@ -73,6 +99,26 @@ class MeetupsController {
     });
 
     return res.json(meetup);
+  }
+
+  async delete(req, res) {
+    const meetup = await Meetup.findByPk(req.params.id);
+
+    if (meetup.user_id !== req.userId) {
+      return res.status(401).json({
+        error: "You don't have permission to cancel this meetup.",
+      });
+    }
+
+    if (meetup.past) {
+      return res.status(401).json({
+        error: "Can't delete past meetups.",
+      });
+    }
+
+    await meetup.destroy();
+
+    return res.send();
   }
 }
 
